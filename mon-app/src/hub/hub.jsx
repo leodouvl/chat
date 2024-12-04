@@ -4,15 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import { Layout, Menu } from 'antd';
 import SearchUsers from '../component/search';
 import { useConversation } from '../context/ConversationContext';
-import { UserOutlined, MessageOutlined } from '@ant-design/icons';
+import { MessageOutlined } from '@ant-design/icons';
 import axios from 'axios';
-import socket from '../service/socket';
+import Chat from './chat';
 
 function Hub() {
-  const { auth, logout } = useAuth();
+  const { auth, logout, socket } = useAuth();
   const navigate = useNavigate();
   const { Header, Content, Sider, Footer } = Layout;
-  const { currentConversation } = useConversation();
+  const { currentConversation, setCurrentConversation } = useConversation();
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [detailedConversations, setDetailedConversations] = useState([]);
 
@@ -22,37 +22,42 @@ function Hub() {
       const response = await axios.get('http://localhost:3001/userConversation', {
         params: { userId: auth.userId } // Utilisation de `params` pour envoyer `userId` en tant que paramètre de requête
       });
-      console.log(response.data);
-      setDetailedConversations(response.data); // Mettre à jour l'état avec les conversations
+      const sortedConversations = response.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setDetailedConversations(sortedConversations); // Mettre à jour l'état avec les conversations
     } catch (error) {
       console.error("Erreur lors de la récupération des conversations :", error);
     }
   };
 
-useEffect(() => {
-  // Écouter les conversations ajoutées
-  socket.on("conversationAdded", (newConversation) => {
-    console.log("Conversation ajoutée reçue :", newConversation);
-    setDetailedConversations((prevConversation)=>[
-        ...prevConversation,
-        {newConversation},
-    ]);
-    
-  });
+  useEffect(() => {
+    if (!socket) return;
 
-  return () => {
-    // Nettoyer l'écouteur
-    socket.off("conversationAdded");
-  };
-}, []);
-
+    console.log(socket)
+    // Écouter les conversations ajoutées
+    socket.on("conversationAdded", (newConversation) => {
+      console.log("Conversation ajoutée reçue :", newConversation);
   
+      setDetailedConversations((prevConversations) => {
+        // Ajouter la nouvelle conversation en début de liste
+        const updatedConversations = [newConversation, ...prevConversations];
+        
+        // Trier les conversations par la date de création, de la plus récente à la plus ancienne
+        return updatedConversations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      });
+    });
+  
+    return () => {
+      // Nettoyer l'écouteur
+      socket.off("conversationAdded");
+    };
+  }, []);
+
+
+
   useEffect(() => {
     getConversations();
   }, [currentConversation]);
-
-
-
+ 
   useEffect(() => {
     if (!auth.token) {
       navigate('/');
@@ -76,15 +81,12 @@ const footerStyle = {
 const headerStyle = {
 
 };
+
 const contentStyle = {
   display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
   flexDirection: 'column',
-  maxHeight: '40vh',
-  marginTop: '50px',
-};
 
+};
 const siderStyle = {
   textAlign: 'center',
   lineHeight: '120px',
@@ -98,9 +100,20 @@ const layoutStyle = {
 
 };
 
+
 const handleSelectConversation = (conversationId) => {
   setSelectedConversation(conversationId);
+  const selectedConversation = detailedConversations.find(conv => conv._id === conversationId);
+  setCurrentConversation(selectedConversation)
 };
+
+const handleConversation = () => {
+  if (!currentConversation) {
+    return null; // Ne rend rien si la conversation est null
+  }
+  return <Chat />;
+};
+
 
   return (
       <Layout style={layoutStyle}>
@@ -126,7 +139,7 @@ const handleSelectConversation = (conversationId) => {
         </Menu>
         </Sider>
         <Content style={contentStyle}>
-       
+            {handleConversation(selectedConversation)}
         </Content>
       </Layout>
       <Footer style={footerStyle}>

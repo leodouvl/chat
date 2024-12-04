@@ -27,6 +27,19 @@ MongoClient.connect(CONNECTION_STRING)
     console.log("Connexion à MongoDB réussie");
     database = client.db(DATABASE_NAME);
 
+      // Suppression des documents
+/*const deleteAllDocuments = async () => {
+  try {
+    const messagesCollection = database.collection('messages');
+    messagesCollection.deleteMany({});
+    console.log('Tous les documents ont été supprimés.');
+  } catch (error) {
+    console.error('Erreur lors de la suppression des documents:', error);
+  }
+};
+
+ deleteAllDocuments();*/
+
     // Création du serveur HTTP et intégration de socket.io
     const http = require("http");
     const server = http.createServer(app); // Crée un serveur HTTP avec Express
@@ -38,7 +51,12 @@ MongoClient.connect(CONNECTION_STRING)
     });
 
     io.on("connection", (socket) => {
-      console.log("Un client est connecté : ", socket.id);
+      console.log("Un client est connecté :", socket.id);
+      socket.on("setUserId", (userId) => {
+        console.log("client :", userId)
+        socket.userId = userId; // Enregistre l'ID de l'utilisateur
+      });
+    
     
       // Écouter l'événement 'newUser'
       socket.on("newUser", (user) => {
@@ -72,6 +90,48 @@ MongoClient.connect(CONNECTION_STRING)
             senderSocket.emit("conversationAdded", { to: recipientId, conversation });
         }
     });
+
+    socket.on("newMessage", ({ message, sender, receiver, createdAt }) => {
+      console.log("Nouveau message reçu :", message);
+      console.log("crée a : ", createdAt);
+    
+      // Récupère toutes les sockets connectées
+      const allSockets = Array.from(io.sockets.sockets.values());
+      console.log("Liste complète des sockets connectées :");
+      allSockets.forEach((s, index) => {
+        console.log(`Socket ${index + 1}: ID=${s.id}, userId=${s.userId}`);
+      });
+    
+      // Trouve la socket du destinataire (receiver)
+      const recipientSocket = allSockets.find(
+        (s) => s.userId === receiver
+      );
+    
+      // Trouve la socket de l'expéditeur (sender)
+      const senderSocket = allSockets.find(
+        (s) => s.userId === sender
+      );
+    
+      console.log("Résultat de la recherche des sockets :");
+      console.log("Socket du destinataire :", receiver ? `ID=${recipientSocket?.id}, userId=${recipientSocket?.userId}` : "Non trouvé");
+      console.log("Socket de l'expéditeur :", sender ? `ID=${senderSocket?.id}, userId=${senderSocket?.userId}` : "Non trouvé");
+    
+      if (!recipientSocket) {
+        console.log(`Le destinataire (userId: ${receiver}) n'est pas connecté.`);
+      } else {
+        recipientSocket.emit("messageAdded", { from: sender, message, sender, receiver, createdAt });
+        console.log(`Message envoyé au destinataire connecté (userId: ${receiver}).`);
+      }
+    
+      if (senderSocket) {
+        // Notifie l'expéditeur uniquement s'il est sur un autre socket
+        senderSocket.emit("messageAdded", { to: receiver, message, sender, receiver, createdAt });
+        console.log("Message renvoyé à l'expéditeur :", sender);
+      } else if (!senderSocket) {
+        console.log("Socket de l'expéditeur non trouvée pour userId :", sender);
+      }
+    });
+    
     
       socket.on("disconnect", () => {
         console.log("Un client s'est déconnecté : ", socket.id);
@@ -86,6 +146,8 @@ MongoClient.connect(CONNECTION_STRING)
   .catch(err => {
     console.error("Erreur de connexion à MongoDB", err);
   });
+
+
 
 
 
@@ -128,6 +190,48 @@ async function addConversationToUser(userId, conversationId, usersCollection) {
     return { success: false, message: "Erreur lors de l'ajout de la conversation", error };
   }
 }
+
+app.post('/message', async (req, res) => {
+  try {
+    const { conversation, inputValue, sender, receiver } = req.body; 
+    console.log(conversation._id)
+    const conversationsCollection = database.collection('conversations');
+    const messagesCollection = database.collection('messages');
+
+
+    const newMessage = { message: inputValue, 
+                         sender: sender, 
+                         receiver: receiver, 
+                         createdAt: new Date() };
+
+    await messagesCollection.insertOne(newMessage);
+
+    
+    const parsedId = new ObjectId(conversation._id);
+ 
+    const result = await conversationsCollection.updateOne(
+      { _id: parsedId }, // Recherche par l'ID
+      { $addToSet: { messages: newMessage } } // Ajout du message à un tableau appelé "messages"
+    );
+ 
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Conversation non trouvée' });
+    }
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({ success: false, message: 'Message déjà existant ou aucun changement effectué' });
+    }
+
+    return res.status(200).json({ newMessage:newMessage, success: true, message: 'Message ajouté avec succès' });
+  } catch (error) {
+    console.error("Erreur lors de l'ajout du message :", error);
+    res.status(500).json({ success: false, message: "Erreur lors de l'insertion du message", error });
+  }
+});
+
+  
+
 
 app.post('/conversation/', async (req, res) => {
   try {
@@ -241,7 +345,6 @@ app.post('/login', async (req, res) => {
 
 // Recherche d'utilisateurs par nom
 app.get('/searchUsers', async (req, res) => {
-  console.log(req.query);
   try {
     const { query, userId } = req.query; // Texte recherché et ID de l'utilisateur connecté
     const usersCollection = database.collection('users');
@@ -257,8 +360,6 @@ app.get('/searchUsers', async (req, res) => {
       value: user.name,
       id: user._id.toString(),  // Conversion de l'ID en chaîne de caractères pour correspondre à l'ID dans l'interface frontend
     }));
-
-    console.log(formattedUsers)
 
     res.status(200).json(formattedUsers);
   } catch (error) {
@@ -324,8 +425,6 @@ app.get('/userConversation', async (req, res) => {
     const { userId } = req.query; // Utilisation de req.query pour récupérer les paramètres de la requête
     const usersCollection = database.collection('users');
     const conversationsCollection = database.collection('conversations');
-
-    console.log(req.query); // Pour vérifier que la requête contient bien `userId`
     
     // Récupérer l'utilisateur par son ID
     const user = await usersCollection.findOne({ _id: new ObjectId(userId) });

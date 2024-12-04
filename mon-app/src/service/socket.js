@@ -4,8 +4,8 @@ import { io } from "socket.io-client";
 const SOCKET_URL = "http://localhost:3001";
 
 // Instance du client Socket.io
-export const socket = io(SOCKET_URL, {
+export const socketUser = io(SOCKET_URL, {
   transports: ["websocket"], // Utilisation de WebSocket uniquement
 });
 
-export default socket;
+export default socketUser;

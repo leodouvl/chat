@@ -3,7 +3,7 @@ import { AutoComplete } from 'antd';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useConversation } from '../context/ConversationContext';
-import socket from '../service/socket';
+import socketUser from '../service/socket';
 
 const SearchUsers = () => {
   const [users, setUsers] = useState([]);
@@ -12,7 +12,7 @@ const SearchUsers = () => {
 
   // Écoute les nouveaux utilisateurs ajoutés via Socket.io
   useEffect(() => {
-    socket.on("userAdded", (newUser) => {
+    socketUser.on("userAdded", (newUser) => {
       console.log(newUser)
       setUsers((prevUsers) => [
         ...prevUsers,
@@ -21,7 +21,7 @@ const SearchUsers = () => {
     });
 
     return () => {
-      socket.off("userAdded");
+      socketUser.off("userAdded");
     };
   }, []);
 

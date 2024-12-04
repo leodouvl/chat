@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { io } from 'socket.io-client';
+import socketUser from '../service/socket';
 
 const AuthContext = createContext();
 
@@ -23,28 +24,34 @@ export const AuthProvider = ({ children }) => {
     }
   }, [auth]);
 
-  // Initialiser la connexion WebSocket lorsque l'utilisateur se connecte
   useEffect(() => {
     if (auth.token) {
       const newSocket = io('http://localhost:3001', {
-        auth: { token: auth.token }, // Envoyer le token pour l'authentification
+        auth: { token: auth.token }
       });
-
+  
       setSocket(newSocket);
-
+  
       newSocket.on('connect', () => {
         console.log('WebSocket connecté avec ID :', newSocket.id);
+        
+        // Émettre l'ID utilisateur lorsque le socket est connecté
+        if (auth.userId) {
+          newSocket.emit('setUserId', auth.userId);
+          console.log('setUserId émis avec :', auth.userId);
+        }
       });
-
+  
       newSocket.on('disconnect', () => {
         console.log('WebSocket déconnecté');
       });
-
+  
       return () => {
         newSocket.close(); // Nettoyer la connexion lorsque le composant est démonté
       };
     }
-  }, [auth.token]);
+  }, [auth.token, auth.userId]);
+  
 
   const login = (token, email, name, userId, userConversations) => {
     setAuth({ token, email, name, userId, userConversations });
@@ -56,6 +63,9 @@ export const AuthProvider = ({ children }) => {
     if (socket) {
       socket.close(); // Déconnecter le WebSocket à la déconnexion
       setSocket(null);
+    }
+    if(socketUser){
+      socketUser.close();
     }
   };
 
